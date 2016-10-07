@@ -1,0 +1,149 @@
+@using System.Linq;
+@using System.Security.Claims;
+@using System.Web.Script.Serialization;
+
+@{
+    var p = ClaimsPrincipal.Current;
+    var info = new
+    {
+        Name = p.FindFirst(ClaimTypes.GivenName).Value + " " + p.FindFirst(ClaimTypes.Surname).Value,
+        Email = p.Identity.Name,
+    };
+
+    string accessToken = this.Request.Headers["X-MS-TOKEN-AAD-ACCESS-TOKEN"];
+
+    //string encodedImage;
+    var request = WebRequest.CreateHttp("https://graph.windows.net/me/thumbnailPhoto?api-version=1.6");
+    request.Headers.Add(HttpRequestHeader.Authorization, "Bearer " + accessToken);
+    //using (var response = (HttpWebResponse)request.GetResponse())
+    //{
+    //    using (var responseStream = response.GetResponseStream())
+    //    {
+    //        using (var memoryStream = new MemoryStream())
+    //        {
+    //            responseStream.CopyTo(memoryStream);
+    //            encodedImage = Convert.ToBase64String(memoryStream.ToArray());
+    //        }
+    //    }
+    //}
+    
+    //string inlineProfileImageSrc = "data:image/png;base64," + encodedImage;
+
+    var securityGroups = new List<IDictionary<string, object>>(300);
+
+    request = WebRequest.CreateHttp("https://graph.windows.net/me/memberOf?$top=500&api-version=1.6");
+    request.Headers.Add(HttpRequestHeader.Authorization, "Bearer " + accessToken);
+        
+    object[] groups;
+    using (var response = (HttpWebResponse)request.GetResponse())
+    {
+        using (var responseStream = response.GetResponseStream())
+        {
+            using (var reader = new StreamReader(responseStream))
+            {
+                string jsonResponse = reader.ReadToEnd();
+                var serializer = new JavaScriptSerializer();
+                var deserializedResponseJson = (IDictionary<string, object>)serializer.DeserializeObject(jsonResponse);
+                groups = (object[])deserializedResponseJson["value"];
+            }
+        }
+    }
+        
+    foreach (IDictionary<string, object> group in groups)
+    {
+        if ((bool)group["securityEnabled"])
+        {
+            securityGroups.Add(group);
+        }
+    }
+}
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Who Am I?</title>
+    <style type="text/css">
+        body {
+            font-family: courier,serif;
+            margin-left: 20px;
+            margin-right: 20px;
+        }
+
+        .Table {
+            display: table;
+            white-space: pre-wrap;
+        }
+
+        .Title {
+            display: table-caption;
+            text-align: left;
+            font-weight: bold;
+            font-size: larger;
+        }
+
+        .Heading {
+            display: table-row;
+            font-weight: bold;
+            text-align: left;
+        }
+
+        .Row {
+            display: table-row;
+        }
+
+        .Cell {
+            display: table-cell;
+            border: solid;
+            border-width: thin;
+            padding-left: 5px;
+            padding-right: 5px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Who Am I?</h1>
+    <p>
+        <!--<div><img alt="Embedded Image" src="inlineProfileImageSrc" /></div>-->
+        <div>@info.Name</div>
+        <div>@info.Email</div>
+    </p>
+
+    <p>
+        <div class="Table">
+            <div class="Title">Security Groups (@securityGroups.Count)</div>
+            <div class="Heading">
+                <div class="Cell">Name</div>
+                <div class="Cell">Object ID</div>
+                <div class="Cell">Description</div>
+            </div>
+        @foreach (IDictionary<string, object> group in securityGroups)
+        {
+            <div class="Row">
+                <div class="Cell">@group["displayName"]</div>
+                <div class="Cell">@group["objectId"]</div>
+                <div class="Cell">@group["description"]</div>
+            </div>
+        }
+        </div>
+    </p>
+    <p>
+        <div class="Table">
+            <div class="Title">Tokens (@this.Request.Headers.Count)</div>
+            <div class="Heading">
+                <div class="Cell">Header</div>
+                <div class="Cell">Raw Token</div>
+            </div>
+            @foreach (string header in this.Request.Headers)
+            {
+                if (header.StartsWith("x-ms-token-", StringComparison.OrdinalIgnoreCase))
+                {
+                    <div class="Row">
+                        <div class="Cell">@header</div>
+                        <div class="Cell">@this.Request.Headers[header]</div>
+                    </div>
+                }
+            }
+        </div>
+    </p>
+
+</body>
+</html>
